@@ -68,6 +68,3 @@ st.subheader("Your Guesses")
 for g, fb in st.session_state.history:
     st.write(f"{g} → {fb}")
 
-
-I’ve fixed the import syntax issue by separating them into proper lines. Your code should now run without the SyntaxError. ✅
-
