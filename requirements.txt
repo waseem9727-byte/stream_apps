@@ -9,3 +9,4 @@ reportlab
 Pillow
 opencv-python-headless
 numpy
+moviepy
