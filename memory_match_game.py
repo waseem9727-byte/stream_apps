@@ -347,89 +347,91 @@ if st.session_state.game_started:
     </style>
     """, unsafe_allow_html=True)
     
-    # Create interactive game grid with clickable cards
-    cols = st.columns(size)
-    for i, emoji in enumerate(st.session_state.game_board):
-        col_idx = i % size
-        row_idx = i // size
-        
-        with cols[col_idx]:
-            # Determine card state and appearance
-            if i in st.session_state.matched_pairs:
-                # Matched card - show emoji with green background
-                card_emoji = emoji
-                button_style = """
-                    background: linear-gradient(135deg, #4CAF50, #45a049) !important;
-                    color: white !important;
-                    border: 3px solid #4CAF50 !important;
-                    font-size: 2rem !important;
-                    height: 70px !important;
-                    border-radius: 12px !important;
-                    transform: scale(0.95);
-                """
-            elif i in st.session_state.revealed_cards:
-                # Currently revealed card - show emoji with highlight
-                card_emoji = emoji
-                button_style = """
-                    background: white !important;
-                    color: #333 !important;
-                    border: 3px solid #4CAF50 !important;
-                    font-size: 2rem !important;
-                    height: 70px !important;
-                    border-radius: 12px !important;
-                    transform: scale(1.05);
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-                """
-            else:
-                # Hidden card - show question mark
-                card_emoji = "❓"
-                button_style = """
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-                    color: white !important;
-                    border: 3px solid #ddd !important;
-                    font-size: 2rem !important;
-                    height: 70px !important;
-                    border-radius: 12px !important;
-                    transition: all 0.3s ease !important;
-                """
+    # Create proper grid layout
+    for row in range(size):
+        cols = st.columns(size)
+        for col in range(size):
+            i = row * size + col
             
-            # Create clickable card button
-            st.markdown(f"""
-                <style>
-                .card-button-{i} > button {{
-                    {button_style}
-                    width: 100% !important;
-                }}
-                .card-button-{i} > button:hover {{
-                    transform: scale(1.02) !important;
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
-                }}
-                </style>
-            """, unsafe_allow_html=True)
-            
-            # Only make card clickable if it's not matched and not already revealed (unless we need to hide it)
-            if (i not in st.session_state.matched_pairs and 
-                (i not in st.session_state.revealed_cards or len(st.session_state.revealed_cards) < 2)):
-                
-                if st.button(
-                    card_emoji, 
-                    key=f"card_{i}",
-                    help=f"Card {i+1}",
-                    disabled=st.session_state.game_won
-                ):
-                    handle_card_click(i)
-                    st.rerun()
+            if i < len(st.session_state.game_board):
+                with cols[col]:
+                    emoji = st.session_state.game_board[i]
                     
-                # Apply custom styling to this specific button
-                st.markdown(f'<div class="card-button-{i}"></div>', unsafe_allow_html=True)
-            else:
-                # For matched cards or revealed cards waiting to be hidden, show as disabled
-                st.button(
-                    card_emoji, 
-                    key=f"card_disabled_{i}",
-                    disabled=True
-                )
-                st.markdown(f'<div class="card-button-{i}"></div>', unsafe_allow_html=True)
+                    # Determine card state and appearance
+                    if i in st.session_state.matched_pairs:
+                        # Matched card - show emoji with green background
+                        card_emoji = emoji
+                        button_style = """
+                            background: linear-gradient(135deg, #4CAF50, #45a049) !important;
+                            color: white !important;
+                            border: 3px solid #4CAF50 !important;
+                            font-size: 2rem !important;
+                            height: 70px !important;
+                            border-radius: 12px !important;
+                            transform: scale(0.95);
+                        """
+                    elif i in st.session_state.revealed_cards:
+                        # Currently revealed card - show emoji with highlight
+                        card_emoji = emoji
+                        button_style = """
+                            background: white !important;
+                            color: #333 !important;
+                            border: 3px solid #4CAF50 !important;
+                            font-size: 2rem !important;
+                            height: 70px !important;
+                            border-radius: 12px !important;
+                            transform: scale(1.05);
+                            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                        """
+                    else:
+                        # Hidden card - show question mark
+                        card_emoji = "❓"
+                        button_style = """
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                            color: white !important;
+                            border: 3px solid #ddd !important;
+                            font-size: 2rem !important;
+                            height: 70px !important;
+                            border-radius: 12px !important;
+                            transition: all 0.3s ease !important;
+                        """
+                    
+                    # Create clickable card button
+                    st.markdown(f"""
+                        <style>
+                        .card-button-{i} > button {{
+                            {button_style}
+                            width: 100% !important;
+                        }}
+                        .card-button-{i} > button:hover {{
+                            transform: scale(1.02) !important;
+                            box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+                        }}
+                        </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # Only make card clickable if it's not matched and game is active
+                    if (i not in st.session_state.matched_pairs and 
+                        i not in st.session_state.revealed_cards and 
+                        not st.session_state.game_won):
+                        
+                        if st.button(
+                            card_emoji, 
+                            key=f"card_{i}",
+                            help=f"Card {i+1}",
+                        ):
+                            handle_card_click(i)
+                            st.rerun()
+                    else:
+                        # For matched cards, revealed cards, or when game is won
+                        st.button(
+                            card_emoji, 
+                            key=f"card_disabled_{i}",
+                            disabled=True
+                        )
+                    
+                    # Apply custom styling to this specific button
+                    st.markdown(f'<div class="card-button-{i}"></div>', unsafe_allow_html=True)
 
 # Game statistics summary
 st.markdown("---")
