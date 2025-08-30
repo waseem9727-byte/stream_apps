@@ -25,14 +25,6 @@ if not VISUALIZATION_AVAILABLE:
     Missing required packages for visualization. Please add the following to your `requirements.txt` file:
     - matplotlib
     - seaborn
-    
-    Your `requirements.txt` should contain:
-    ```
-    streamlit
-    pandas
-    matplotlib
-    seaborn
-    ```
     """)
     st.stop()
 
@@ -56,39 +48,39 @@ if uploaded_file:
     if not numeric_cols:
         st.warning("No numeric columns found in the dataset to calculate correlations.")
     else:
-        st.sidebar.header("⚙️ Options")
+        st.header("⚙️ Options")
 
         # Allow user to select subset of columns
-        selected_cols = st.sidebar.multiselect(
+        selected_cols = st.multiselect(
             "Select columns for correlation",
             numeric_cols,
             default=numeric_cols
         )
 
         # Correlation method
-        corr_method = st.sidebar.radio(
+        corr_method = st.radio(
             "Correlation Method",
             ["pearson", "kendall", "spearman"],
             index=0
         )
 
         # Heatmap customization options
-        st.sidebar.subheader("🎨 Visualization Options")
+        st.subheader("🎨 Visualization Options")
         
         # Color palette options
-        color_palette = st.sidebar.selectbox(
+        color_palette = st.selectbox(
             "Color Palette",
             ["coolwarm", "viridis", "RdBu", "RdYlBu", "seismic"],
             index=0
         )
         
         # Figure size
-        fig_width = st.sidebar.slider("Figure Width", 6, 16, 10)
-        fig_height = st.sidebar.slider("Figure Height", 4, 12, 6)
+        fig_width = st.slider("Figure Width", 6, 16, 10)
+        fig_height = st.slider("Figure Height", 4, 12, 6)
         
         # Annotation options
-        show_annotations = st.sidebar.checkbox("Show Values", value=True)
-        decimal_places = st.sidebar.slider("Decimal Places", 0, 4, 2)
+        show_annotations = st.checkbox("Show Values", value=True)
+        decimal_places = st.slider("Decimal Places", 0, 4, 2)
 
         if selected_cols:
             # Compute correlation
@@ -112,20 +104,16 @@ if uploaded_file:
                     fmt=f".{decimal_places}f",
                     linewidths=0.5,
                     ax=ax,
-                    center=0,  # Center colormap at 0
-                    square=True,  # Make cells square-shaped
-                    cbar_kws={"shrink": 0.8}  # Adjust colorbar size
+                    center=0,
+                    square=True,
+                    cbar_kws={"shrink": 0.8}
                 )
                 
-                # Improve layout
                 plt.title(f'Correlation Matrix ({corr_method.capitalize()})', 
-                         fontsize=14, fontweight='bold', pad=20)
+                          fontsize=14, fontweight='bold', pad=20)
                 plt.tight_layout()
                 
-                # Display plot
                 st.pyplot(fig)
-                
-                # Clear the figure to prevent memory issues
                 plt.close(fig)
                 
             except Exception as e:
@@ -148,17 +136,12 @@ if uploaded_file:
             with st.expander("📈 Correlation Summary"):
                 st.write("**Highest Correlations:**")
                 
-                # Get upper triangle of correlation matrix (avoid duplicates)
-                mask = pd.DataFrame(True, index=corr_matrix.index, columns=corr_matrix.columns)
-                mask = mask.where(~(mask & pd.DataFrame(False, index=corr_matrix.index, columns=corr_matrix.columns).T))
+                # Flatten correlation matrix, remove diagonal
+                corr_series = corr_matrix.where(~pd.np.eye(corr_matrix.shape[0],dtype=bool)).stack().sort_values(ascending=False)
                 
-                # Create a series of correlations
-                corr_series = corr_matrix.where(mask).stack().sort_values(ascending=False)
+                # Remove self-correlations (NaN after masking)
+                corr_series = corr_series.dropna()
                 
-                # Remove self-correlations (diagonal = 1.0)
-                corr_series = corr_series[corr_series < 0.99]
-                
-                # Show top 10 correlations
                 if len(corr_series) > 0:
                     top_correlations = corr_series.head(10)
                     for (var1, var2), corr_val in top_correlations.items():
@@ -167,19 +150,15 @@ if uploaded_file:
                     st.write("No correlations to display.")
                     
         else:
-            st.info("Please select at least one column from the sidebar.")
+            st.info("Please select at least one column from the options above.")
 else:
     st.info("👆 Upload a CSV file to begin.")
     
-    # Show example of expected data format
     st.subheader("📝 Expected Data Format")
-    st.write("Your CSV should contain numeric columns. Here's an example:")
-    
     example_data = pd.DataFrame({
         'Temperature': [23, 25, 22, 28, 30],
         'Humidity': [45, 50, 40, 60, 65],
         'Pressure': [1013, 1015, 1010, 1020, 1025],
         'Sales': [100, 120, 90, 150, 180]
     })
-    
     st.dataframe(example_data)
