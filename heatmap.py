@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 # Try importing seaborn, install if missing
 try:
@@ -9,6 +9,13 @@ except ModuleNotFoundError:
     import os
     os.system("pip install seaborn")
     import seaborn as sns
+
+try:
+    import matplotlib.pyplot as plt
+except ModuleNotFoundError:
+    import os
+    os.system("pip install matplotlib")
+    import matplotlib.pyplot as plt
 
 # --- Page Config ---
 st.set_page_config(page_title="Correlation Heatmap Generator", layout="wide")
