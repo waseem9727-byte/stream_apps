@@ -8,8 +8,13 @@ st.set_page_config(page_title="Data Explorer", layout="wide")
 st.title("📊 Data Explorer App")
 st.write("Upload your dataset (CSV/Excel) to explore it interactively.")
 
+# ---- Reset Button ----
+if st.button("🔄 Reset App"):
+    st.session_state.clear()
+    st.rerun()
+
 # ---- File Upload ----
-uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"], key="file_uploader")
 
 if uploaded_file is not None:
     # Load data
