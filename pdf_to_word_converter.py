@@ -192,8 +192,16 @@ def create_word_document(text_content, original_filename, formatting_options):
 def extract_text_from_docx(docx_file):
     """Extract text from Word document"""
     try:
+        # Reset file pointer to beginning
+        docx_file.seek(0)
+        
         doc = Document(docx_file)
         text_content = []
+        
+        # Check if document has any content
+        if not doc.paragraphs:
+            st.warning("⚠️ The Word document appears to be empty or could not be read.")
+            return None
         
         for para in doc.paragraphs:
             if para.text.strip():
@@ -213,9 +221,14 @@ def extract_text_from_docx(docx_file):
                     'style': para.style.name
                 })
         
+        if not text_content:
+            st.warning("⚠️ No readable text found in the Word document.")
+            return None
+            
         return text_content
     except Exception as e:
         st.error(f"Error reading Word document: {str(e)}")
+        st.error("Make sure you're uploading a valid .docx file (not .doc or other formats)")
         return None
 
 def create_pdf_from_text(text_content, original_filename, pdf_options):
@@ -426,10 +439,16 @@ else:  # Word to PDF Conversion
     # File upload
     uploaded_file = st.file_uploader(
         "Choose a Word document",
-        type=["docx"],
-        help="Upload a Word document (.docx) to convert to PDF format",
+        type=["docx", "doc"],
+        help="Upload a Word document (.docx or .doc) to convert to PDF format",
         key="word_upload"
     )
+    
+    # Debug information
+    if uploaded_file is not None:
+        st.success(f"✅ File uploaded successfully: {uploaded_file.name}")
+    else:
+        st.info("📤 Please select a Word document (.docx or .doc file)")
     
     if uploaded_file is not None:
         # Display file info
@@ -469,67 +488,84 @@ else:  # Word to PDF Conversion
         # Convert button
         if st.button("🔄 Convert Word to PDF", type="primary", use_container_width=True, key="word_convert"):
             with st.spinner("Converting Word to PDF... This may take a moment."):
-                # Reset file pointer
-                uploaded_file.seek(0)
-                
-                # Extract text from Word document
-                text_content = extract_text_from_docx(uploaded_file)
-                
-                if text_content and len(text_content) > 0:
-                    st.success(f"✅ Successfully extracted content from Word document ({len(text_content)} paragraphs)")
+                try:
+                    # Reset file pointer
+                    uploaded_file.seek(0)
                     
-                    # Preview extracted text
-                    with st.expander("👁️ Preview Extracted Text", expanded=False):
-                        preview_content = []
-                        char_count = 0
-                        
-                        for item in text_content[:10]:  # Show first 10 items
-                            text_type = "HEADING" if item['is_heading'] else "PARAGRAPH"
-                            preview_content.append(f"[{text_type}] {item['text'][:200]}...")
-                            char_count += len(item['text'])
-                        
-                        preview_text = "\n\n".join(preview_content)
-                        st.text_area("Content Preview", preview_text, height=300, disabled=True, key="word_preview")
-                        st.info(f"Total characters extracted: {char_count:,}")
+                    # Debug: Show file details
+                    st.info(f"Processing file: {uploaded_file.name} ({uploaded_file.size} bytes)")
                     
-                    # Create PDF
-                    original_filename = uploaded_file.name.replace('.docx', '')
-                    pdf_doc = create_pdf_from_text(text_content, original_filename, pdf_options)
+                    # Extract text from Word document
+                    text_content = extract_text_from_docx(uploaded_file)
                     
-                    if pdf_doc:
-                        output_filename = f"{original_filename}_converted.pdf"
+                    if text_content and len(text_content) > 0:
+                        st.success(f"✅ Successfully extracted content from Word document ({len(text_content)} paragraphs)")
                         
-                        st.download_button(
-                            label="📥 Download PDF Document",
-                            data=pdf_doc,
-                            file_name=output_filename,
-                            mime="application/pdf",
-                            type="primary",
-                            use_container_width=True,
-                            key="word_download"
-                        )
+                        # Preview extracted text
+                        with st.expander("👁️ Preview Extracted Text", expanded=False):
+                            preview_content = []
+                            char_count = 0
+                            
+                            for item in text_content[:10]:  # Show first 10 items
+                                text_type = "HEADING" if item['is_heading'] else "PARAGRAPH"
+                                preview_content.append(f"[{text_type}] {item['text'][:200]}...")
+                                char_count += len(item['text'])
+                            
+                            preview_text = "\n\n".join(preview_content)
+                            st.text_area("Content Preview", preview_text, height=300, disabled=True, key="word_preview")
+                            st.info(f"Total characters extracted: {char_count:,}")
                         
-                        st.success("🎉 Word to PDF conversion completed successfully!")
+                        # Create PDF
+                        original_filename = uploaded_file.name.replace('.docx', '').replace('.doc', '')
+                        pdf_doc = create_pdf_from_text(text_content, original_filename, pdf_options)
                         
-                        # Show conversion summary
-                        with st.expander("📊 Conversion Summary", expanded=True):
-                            col1, col2, col3, col4 = st.columns(4)
+                        if pdf_doc:
+                            output_filename = f"{original_filename}_converted.pdf"
                             
-                            with col1:
-                                st.metric("Paragraphs", len(text_content))
+                            st.download_button(
+                                label="📥 Download PDF Document",
+                                data=pdf_doc,
+                                file_name=output_filename,
+                                mime="application/pdf",
+                                type="primary",
+                                use_container_width=True,
+                                key="word_download"
+                            )
                             
-                            with col2:
-                                headings = len([item for item in text_content if item['is_heading']])
-                                st.metric("Headings", headings)
+                            st.success("🎉 Word to PDF conversion completed successfully!")
                             
-                            with col3:
-                                total_chars = sum(len(item['text']) for item in text_content)
-                                st.metric("Characters", f"{total_chars:,}")
-                            
-                            with col4:
-                                st.metric("Output Format", "PDF")
-                else:
-                    st.warning("⚠️ Could not extract readable content from the Word document.")
+                            # Show conversion summary
+                            with st.expander("📊 Conversion Summary", expanded=True):
+                                col1, col2, col3, col4 = st.columns(4)
+                                
+                                with col1:
+                                    st.metric("Paragraphs", len(text_content))
+                                
+                                with col2:
+                                    headings = len([item for item in text_content if item['is_heading']])
+                                    st.metric("Headings", headings)
+                                
+                                with col3:
+                                    total_chars = sum(len(item['text']) for item in text_content)
+                                    st.metric("Characters", f"{total_chars:,}")
+                                
+                                with col4:
+                                    st.metric("Output Format", "PDF")
+                        else:
+                            st.error("❌ Failed to create PDF. Please check your Word document and try again.")
+                    else:
+                        st.warning("⚠️ Could not extract readable content from the Word document.")
+                        st.info("💡 **Troubleshooting tips:**")
+                        st.write("• Make sure you're uploading a .docx file (not .doc)")
+                        st.write("• Ensure the document contains text content")
+                        st.write("• Try saving the document in a newer Word format")
+                        
+                except Exception as e:
+                    st.error(f"❌ An error occurred during conversion: {str(e)}")
+                    st.info("💡 **Troubleshooting:**")
+                    st.write("• Make sure the file is a valid Word document")
+                    st.write("• Try using a different Word file")
+                    st.write("• Ensure the file isn't corrupted or password-protected")
 
 # Instructions section
 if not uploaded_file:
