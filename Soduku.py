@@ -2,32 +2,36 @@ import streamlit as st
 import random
 import copy
 import time
-from datetime import datetime
 
 # --- Page Config ---
 st.set_page_config(
     page_title="🧩 Sudoku Game",
     page_icon="🧩",
-    layout="wide"
+    layout="centered"
 )
 
 # --- Initialize Session State ---
-if 'board' not in st.session_state:
-    st.session_state.board = None
-if 'solution' not in st.session_state:
-    st.session_state.solution = None
-if 'initial_board' not in st.session_state:
-    st.session_state.initial_board = None
-if 'difficulty' not in st.session_state:
-    st.session_state.difficulty = "Medium"
-if 'game_completed' not in st.session_state:
-    st.session_state.game_completed = False
-if 'start_time' not in st.session_state:
-    st.session_state.start_time = None
-if 'hints_used' not in st.session_state:
-    st.session_state.hints_used = 0
-if 'mistakes' not in st.session_state:
-    st.session_state.mistakes = 0
+def init_session_state():
+    if 'board' not in st.session_state:
+        st.session_state.board = None
+    if 'solution' not in st.session_state:
+        st.session_state.solution = None
+    if 'initial_board' not in st.session_state:
+        st.session_state.initial_board = None
+    if 'difficulty' not in st.session_state:
+        st.session_state.difficulty = "Medium"
+    if 'game_completed' not in st.session_state:
+        st.session_state.game_completed = False
+    if 'start_time' not in st.session_state:
+        st.session_state.start_time = None
+    if 'hints_used' not in st.session_state:
+        st.session_state.hints_used = 0
+    if 'selected_cell' not in st.session_state:
+        st.session_state.selected_cell = None
+    if 'first_load' not in st.session_state:
+        st.session_state.first_load = True
+
+init_session_state()
 
 # --- Sudoku Helper Functions ---
 def is_valid(board, row, col, num):
@@ -65,403 +69,323 @@ def solve_sudoku(board):
                 return False
     return True
 
-def generate_complete_board():
-    """Generate a complete valid Sudoku board"""
-    board = [[0 for _ in range(9)] for _ in range(9)]
+def generate_simple_puzzle(difficulty):
+    """Generate a simple valid puzzle"""
+    # Start with a pre-made solution for speed
+    base_solution = [
+        [5,3,4,6,7,8,9,1,2],
+        [6,7,2,1,9,5,3,4,8],
+        [1,9,8,3,4,2,5,6,7],
+        [8,5,9,7,6,1,4,2,3],
+        [4,2,6,8,5,3,7,9,1],
+        [7,1,3,9,2,4,8,5,6],
+        [9,6,1,5,3,7,2,8,4],
+        [2,8,7,4,1,9,6,3,5],
+        [3,4,5,2,8,6,1,7,9]
+    ]
     
-    # Fill diagonal 3x3 boxes first
-    for box in range(0, 9, 3):
-        fill_box(board, box, box)
+    # Shuffle to create variation
+    solution = copy.deepcopy(base_solution)
     
-    # Solve the rest
-    solve_sudoku(board)
-    return board
-
-def fill_box(board, row, col):
-    """Fill a 3x3 box with random numbers"""
-    nums = list(range(1, 10))
-    random.shuffle(nums)
+    # Random row swaps within boxes
+    for box_start in [0, 3, 6]:
+        rows = list(range(box_start, box_start + 3))
+        random.shuffle(rows)
+        original_rows = [solution[i] for i in range(box_start, box_start + 3)]
+        for i, new_row_idx in enumerate(rows):
+            solution[box_start + i] = original_rows[new_row_idx - box_start]
     
-    for i in range(3):
-        for j in range(3):
-            board[row + i][col + j] = nums[i * 3 + j]
-
-def remove_numbers(board, difficulty):
-    """Remove numbers from board based on difficulty"""
-    # Difficulty settings: (min_clues, max_clues)
-    difficulty_settings = {
-        "Easy": (45, 50),
-        "Medium": (35, 44),
-        "Hard": (25, 34)
+    # Random column swaps within boxes
+    for box_start in [0, 3, 6]:
+        cols = list(range(box_start, box_start + 3))
+        random.shuffle(cols)
+        
+        # Create new solution with swapped columns
+        new_solution = [[0 for _ in range(9)] for _ in range(9)]
+        for row in range(9):
+            for i, col_idx in enumerate(cols):
+                new_solution[row][box_start + i] = solution[row][col_idx]
+        solution = new_solution
+    
+    # Remove numbers based on difficulty
+    puzzle = copy.deepcopy(solution)
+    
+    # Difficulty settings
+    cells_to_remove = {
+        "Easy": 35,      # Remove 35 numbers (46 given)
+        "Medium": 45,    # Remove 45 numbers (36 given)  
+        "Hard": 55       # Remove 55 numbers (26 given)
     }
     
-    min_clues, max_clues = difficulty_settings[difficulty]
-    target_clues = random.randint(min_clues, max_clues)
-    
-    puzzle = copy.deepcopy(board)
+    remove_count = cells_to_remove[difficulty]
     cells = [(i, j) for i in range(9) for j in range(9)]
     random.shuffle(cells)
     
-    removed = 0
-    needed_to_remove = 81 - target_clues
+    for i in range(remove_count):
+        if i < len(cells):
+            row, col = cells[i]
+            puzzle[row][col] = 0
     
-    for row, col in cells:
-        if removed >= needed_to_remove:
-            break
+    return puzzle, solution
+
+def display_sudoku_board():
+    """Display the Sudoku board with clickable interface"""
+    st.markdown("### 🎯 Click a cell and enter a number (1-9)")
+    
+    # Create grid display
+    board_html = '<div style="display: flex; justify-content: center; margin: 20px 0;">'
+    board_html += '<table style="border-collapse: collapse; border: 3px solid #000;">'
+    
+    for i in range(9):
+        board_html += '<tr>'
+        for j in range(9):
+            # Cell styling
+            cell_style = "width: 40px; height: 40px; text-align: center; font-size: 18px; font-weight: bold; border: 1px solid #666;"
             
-        # Try removing this cell
-        backup = puzzle[row][col]
-        puzzle[row][col] = 0
+            # Thick borders for 3x3 boxes
+            if j % 3 == 2 and j != 8:
+                cell_style += " border-right: 3px solid #000;"
+            if i % 3 == 2 and i != 8:
+                cell_style += " border-bottom: 3px solid #000;"
+            
+            # Color coding
+            value = st.session_state.board[i][j]
+            is_given = st.session_state.initial_board[i][j] != 0
+            
+            if is_given:
+                cell_style += " background-color: #f5f5f5; color: #000;"
+            elif value != 0:
+                cell_style += " background-color: #e3f2fd; color: #1976d2;"
+            else:
+                cell_style += " background-color: #fff;"
+            
+            # Cell content
+            display_value = str(value) if value != 0 else ""
+            
+            board_html += f'<td style="{cell_style}">{display_value}</td>'
         
-        # Check if puzzle still has unique solution
-        temp_board = copy.deepcopy(puzzle)
-        if count_solutions(temp_board) == 1:
-            removed += 1
-        else:
-            puzzle[row][col] = backup
+        board_html += '</tr>'
     
-    return puzzle
-
-def count_solutions(board, limit=2):
-    """Count number of solutions (up to limit)"""
-    solutions = [0]
+    board_html += '</table></div>'
     
-    def solve_count(board):
-        if solutions[0] >= limit:
-            return
-            
-        for row in range(9):
-            for col in range(9):
-                if board[row][col] == 0:
-                    for num in range(1, 10):
-                        if is_valid(board, row, col, num):
-                            board[row][col] = num
-                            solve_count(board)
-                            board[row][col] = 0
-                    return
-        solutions[0] += 1
-    
-    solve_count(board)
-    return solutions[0]
-
-def generate_puzzle(difficulty):
-    """Generate a new puzzle"""
-    complete_board = generate_complete_board()
-    puzzle = remove_numbers(complete_board, difficulty)
-    return puzzle, complete_board
-
-def is_board_complete(board):
-    """Check if board is completely filled"""
-    for row in range(9):
-        for col in range(9):
-            if board[row][col] == 0:
-                return False
-    return True
-
-def is_board_valid(board):
-    """Check if current board state is valid"""
-    for row in range(9):
-        for col in range(9):
-            if board[row][col] != 0:
-                # Temporarily remove the number to check validity
-                num = board[row][col]
-                board[row][col] = 0
-                if not is_valid(board, row, col, num):
-                    board[row][col] = num
-                    return False
-                board[row][col] = num
-    return True
-
-def get_hint(board, solution):
-    """Get a hint for the current board"""
-    empty_cells = [(i, j) for i in range(9) for j in range(9) if board[i][j] == 0]
-    if empty_cells:
-        row, col = random.choice(empty_cells)
-        return row, col, solution[row][col]
-    return None
-
-# --- Custom CSS for Sudoku Board ---
-st.markdown("""
-<style>
-    .sudoku-container {
-        display: flex;
-        justify-content: center;
-        margin: 20px 0;
-    }
-    .sudoku-cell {
-        width: 40px;
-        height: 40px;
-        border: 1px solid #333;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-        font-weight: bold;
-    }
-    .sudoku-cell-thick-right {
-        border-right: 3px solid #000;
-    }
-    .sudoku-cell-thick-bottom {
-        border-bottom: 3px solid #000;
-    }
-    .sudoku-cell-given {
-        background-color: #f0f0f0;
-        color: #000;
-    }
-    .sudoku-cell-user {
-        background-color: #fff;
-        color: #007bff;
-    }
-    .sudoku-cell-error {
-        background-color: #ffebee;
-        color: #d32f2f;
-    }
-    .sudoku-cell-hint {
-        background-color: #e8f5e8;
-        color: #2e7d32;
-    }
-</style>
-""", unsafe_allow_html=True)
+    st.markdown(board_html, unsafe_allow_html=True)
 
 # --- Main App ---
 st.title("🧩 Sudoku Game")
-st.markdown("Challenge yourself with different difficulty levels!")
 
-# Sidebar for game controls
-with st.sidebar:
-    st.header("🎮 Game Controls")
-    
-    # Difficulty selection
+# Auto-generate first puzzle
+if st.session_state.first_load:
+    with st.spinner("Generating your first puzzle..."):
+        puzzle, solution = generate_simple_puzzle("Medium")
+        st.session_state.board = copy.deepcopy(puzzle)
+        st.session_state.solution = solution
+        st.session_state.initial_board = copy.deepcopy(puzzle)
+        st.session_state.start_time = time.time()
+        st.session_state.first_load = False
+    st.success("Welcome! Your puzzle is ready!")
+
+# Game controls
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col2:
+    # Difficulty and new game
     difficulty = st.selectbox(
-        "Select Difficulty:",
+        "🎯 Select Difficulty:",
         ["Easy", "Medium", "Hard"],
         index=["Easy", "Medium", "Hard"].index(st.session_state.difficulty)
     )
     
-    if difficulty != st.session_state.difficulty:
-        st.session_state.difficulty = difficulty
-    
-    # New game button
     if st.button("🆕 New Game", type="primary", use_container_width=True):
-        with st.spinner("Generating new puzzle..."):
-            puzzle, solution = generate_puzzle(difficulty)
+        with st.spinner(f"Generating {difficulty} puzzle..."):
+            puzzle, solution = generate_simple_puzzle(difficulty)
             st.session_state.board = copy.deepcopy(puzzle)
             st.session_state.solution = solution
             st.session_state.initial_board = copy.deepcopy(puzzle)
+            st.session_state.difficulty = difficulty
             st.session_state.game_completed = False
             st.session_state.start_time = time.time()
             st.session_state.hints_used = 0
-            st.session_state.mistakes = 0
-        st.success("New puzzle generated!")
+        st.success(f"New {difficulty} puzzle generated!")
         st.rerun()
-    
-    st.divider()
-    
-    # Game statistics
-    if st.session_state.board is not None:
-        st.header("📊 Game Stats")
-        
-        # Timer
-        if st.session_state.start_time and not st.session_state.game_completed:
-            elapsed_time = int(time.time() - st.session_state.start_time)
-            minutes, seconds = divmod(elapsed_time, 60)
-            st.metric("⏱️ Time", f"{minutes:02d}:{seconds:02d}")
-        
-        # Other stats
-        st.metric("💡 Hints Used", st.session_state.hints_used)
-        st.metric("❌ Mistakes", st.session_state.mistakes)
-        
-        # Progress
-        if st.session_state.board:
-            filled_cells = sum(1 for row in st.session_state.board for cell in row if cell != 0)
-            progress = (filled_cells / 81) * 100
-            st.metric("📈 Progress", f"{progress:.1f}%")
-    
-    st.divider()
-    
-    # Game actions
-    if st.session_state.board is not None and not st.session_state.game_completed:
-        st.header("🔧 Actions")
-        
-        # Hint button
-        if st.button("💡 Get Hint", use_container_width=True):
-            hint = get_hint(st.session_state.board, st.session_state.solution)
-            if hint:
-                row, col, value = hint
-                st.session_state.board[row][col] = value
-                st.session_state.hints_used += 1
-                st.success(f"Hint: Added {value} at row {row+1}, column {col+1}")
-                st.rerun()
-            else:
-                st.info("No hints available - puzzle is complete!")
-        
-        # Validate button
-        if st.button("✅ Check Solution", use_container_width=True):
-            if is_board_valid(st.session_state.board):
-                if is_board_complete(st.session_state.board):
-                    st.session_state.game_completed = True
-                    st.success("🎉 Congratulations! Puzzle completed!")
-                    st.balloons()
-                else:
-                    st.info("✅ Looking good so far! Keep going!")
-            else:
-                st.error("❌ There are some errors in your solution")
-        
-        # Clear button
-        if st.button("🗑️ Clear All", use_container_width=True):
-            if st.checkbox("Are you sure?", key="clear_confirm"):
-                st.session_state.board = copy.deepcopy(st.session_state.initial_board)
-                st.session_state.mistakes = 0
-                st.success("Board cleared!")
-                st.rerun()
 
-# Main game area
-if st.session_state.board is None:
-    st.info("👆 Select a difficulty and click 'New Game' to start playing!")
-    
-    # Instructions
-    st.subheader("📋 How to Play Sudoku")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **🎯 Objective:**
-        Fill the 9×9 grid with numbers 1-9
-        
-        **📐 Rules:**
-        • Each row must contain all digits 1-9
-        • Each column must contain all digits 1-9
-        • Each 3×3 box must contain all digits 1-9
-        • No number can repeat in any row, column, or box
-        """)
-    
-    with col2:
-        st.markdown("""
-        **🎮 Controls:**
-        • Click on a cell to select it
-        • Use the number input below the grid
-        • Use hints sparingly for better scores
-        • Check your solution anytime
-        
-        **🏆 Difficulty Levels:**
-        • **Easy:** 45-50 given numbers
-        • **Medium:** 35-44 given numbers  
-        • **Hard:** 25-34 given numbers
-        """)
-
-else:
-    # Display the Sudoku board
-    st.subheader(f"🧩 Sudoku - {st.session_state.difficulty} Level")
-    
+# Display current game status
+if st.session_state.board is not None:
     if st.session_state.game_completed:
-        st.success("🎉 Puzzle Completed! Great job!")
-        elapsed_time = int(time.time() - st.session_state.start_time) if st.session_state.start_time else 0
-        minutes, seconds = divmod(elapsed_time, 60)
-        st.info(f"⏱️ Final Time: {minutes:02d}:{seconds:02d} | 💡 Hints: {st.session_state.hints_used} | ❌ Mistakes: {st.session_state.mistakes}")
+        st.success("🎉 Congratulations! Puzzle Completed!")
+        st.balloons()
     
-    # Create input grid
-    st.markdown("### Enter numbers in the cells:")
-    
-    # Create a 9x9 grid of number inputs
-    board_changed = False
-    
-    for i in range(9):
-        cols = st.columns(9)
-        for j in range(9):
-            with cols[j]:
-                # Determine if this is a given number (unchangeable)
-                is_given = st.session_state.initial_board[i][j] != 0
-                
-                if is_given:
-                    # Display given numbers as disabled inputs
-                    st.number_input(
-                        f"",
-                        min_value=1,
-                        max_value=9,
-                        value=st.session_state.board[i][j],
-                        key=f"cell_{i}_{j}",
-                        disabled=True,
-                        label_visibility="collapsed"
-                    )
-                else:
-                    # Allow user input for empty cells
-                    current_value = st.session_state.board[i][j] if st.session_state.board[i][j] != 0 else None
-                    
-                    new_value = st.number_input(
-                        f"",
-                        min_value=1,
-                        max_value=9,
-                        value=current_value,
-                        key=f"cell_{i}_{j}",
-                        label_visibility="collapsed",
-                        step=1
-                    )
-                    
-                    # Update board if value changed
-                    if new_value is not None:
-                        if st.session_state.board[i][j] != new_value:
-                            # Check if the move is valid
-                            old_value = st.session_state.board[i][j]
-                            st.session_state.board[i][j] = 0  # Temporarily clear
-                            
-                            if is_valid(st.session_state.board, i, j, new_value):
-                                st.session_state.board[i][j] = new_value
-                                board_changed = True
-                            else:
-                                st.session_state.board[i][j] = old_value
-                                st.session_state.mistakes += 1
-                                st.error(f"❌ Invalid move at row {i+1}, column {j+1}")
-                    elif current_value is not None:
-                        st.session_state.board[i][j] = 0
-                        board_changed = True
-    
-    # Auto-check for completion
-    if board_changed and is_board_complete(st.session_state.board):
-        if is_board_valid(st.session_state.board):
-            st.session_state.game_completed = True
-            st.rerun()
-    
-    # Quick actions below the board
-    st.divider()
-    
+    # Game stats
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("💡 Quick Hint"):
-            hint = get_hint(st.session_state.board, st.session_state.solution)
-            if hint:
-                row, col, value = hint
-                st.session_state.board[row][col] = value
-                st.session_state.hints_used += 1
-                st.rerun()
+        filled = sum(1 for row in st.session_state.board for cell in row if cell != 0)
+        st.metric("Progress", f"{filled}/81")
     
     with col2:
-        if st.button("✅ Validate"):
-            if is_board_valid(st.session_state.board):
-                st.success("✅ No errors found!")
-            else:
-                st.error("❌ Found errors!")
+        if st.session_state.start_time:
+            elapsed = int(time.time() - st.session_state.start_time)
+            mins, secs = divmod(elapsed, 60)
+            st.metric("Time", f"{mins:02d}:{secs:02d}")
     
     with col3:
-        if st.button("🔍 Show Solution"):
-            if st.checkbox("Really show solution?", key="show_solution"):
+        st.metric("Hints", st.session_state.hints_used)
+    
+    with col4:
+        st.metric("Level", st.session_state.difficulty)
+    
+    # Display the board
+    display_sudoku_board()
+    
+    # Cell selection and input
+    st.markdown("### 🎯 Select Cell and Enter Number")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        selected_row = st.selectbox("Row (1-9):", range(1, 10), index=0) - 1
+        selected_col = st.selectbox("Column (1-9):", range(1, 10), index=0) - 1
+    
+    with col2:
+        # Check if selected cell is modifiable
+        is_given = st.session_state.initial_board[selected_row][selected_col] != 0
+        
+        if is_given:
+            st.info(f"Cell ({selected_row+1}, {selected_col+1}) is given and cannot be changed")
+            current_value = st.session_state.board[selected_row][selected_col]
+            st.write(f"**Value: {current_value}**")
+        else:
+            current_value = st.session_state.board[selected_row][selected_col] if st.session_state.board[selected_row][selected_col] != 0 else None
+            
+            new_value = st.number_input(
+                f"Enter number for cell ({selected_row+1}, {selected_col+1}):",
+                min_value=1,
+                max_value=9,
+                value=current_value,
+                step=1,
+                key="number_input"
+            )
+            
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                if st.button("✅ Place Number", use_container_width=True):
+                    if new_value is not None:
+                        # Temporarily clear cell to check validity
+                        old_value = st.session_state.board[selected_row][selected_col]
+                        st.session_state.board[selected_row][selected_col] = 0
+                        
+                        if is_valid(st.session_state.board, selected_row, selected_col, new_value):
+                            st.session_state.board[selected_row][selected_col] = new_value
+                            st.success(f"✅ Placed {new_value} at ({selected_row+1}, {selected_col+1})")
+                            
+                            # Check if puzzle is complete
+                            if all(st.session_state.board[r][c] != 0 for r in range(9) for c in range(9)):
+                                st.session_state.game_completed = True
+                                st.rerun()
+                        else:
+                            st.session_state.board[selected_row][selected_col] = old_value
+                            st.error(f"❌ Invalid! {new_value} conflicts with row, column, or box rules")
+            
+            with col_b:
+                if st.button("🗑️ Clear Cell", use_container_width=True):
+                    st.session_state.board[selected_row][selected_col] = 0
+                    st.success(f"✅ Cleared cell ({selected_row+1}, {selected_col+1})")
+    
+    st.divider()
+    
+    # Quick action buttons
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("💡 Hint", use_container_width=True):
+            # Find an empty cell and fill it
+            empty_cells = [(i, j) for i in range(9) for j in range(9) 
+                          if st.session_state.board[i][j] == 0]
+            if empty_cells:
+                row, col = random.choice(empty_cells)
+                correct_value = st.session_state.solution[row][col]
+                st.session_state.board[row][col] = correct_value
+                st.session_state.hints_used += 1
+                st.success(f"💡 Hint: Placed {correct_value} at ({row+1}, {col+1})")
+                st.rerun()
+            else:
+                st.info("No empty cells for hints!")
+    
+    with col2:
+        if st.button("✅ Check", use_container_width=True):
+            # Check current state
+            errors = 0
+            for i in range(9):
+                for j in range(9):
+                    if st.session_state.board[i][j] != 0:
+                        num = st.session_state.board[i][j]
+                        st.session_state.board[i][j] = 0
+                        if not is_valid(st.session_state.board, i, j, num):
+                            errors += 1
+                        st.session_state.board[i][j] = num
+            
+            if errors == 0:
+                if all(st.session_state.board[r][c] != 0 for r in range(9) for c in range(9)):
+                    st.success("🎉 Perfect! Puzzle completed!")
+                    st.session_state.game_completed = True
+                else:
+                    st.success("✅ No errors so far!")
+            else:
+                st.error(f"❌ Found {errors} error(s)")
+    
+    with col3:
+        if st.button("🔄 Reset", use_container_width=True):
+            st.session_state.board = copy.deepcopy(st.session_state.initial_board)
+            st.session_state.game_completed = False
+            st.session_state.hints_used = 0
+            st.success("🔄 Board reset!")
+            st.rerun()
+    
+    with col4:
+        if st.button("💯 Solve", use_container_width=True):
+            if st.checkbox("Show solution?"):
                 st.session_state.board = copy.deepcopy(st.session_state.solution)
                 st.session_state.game_completed = True
                 st.info("Solution revealed!")
                 st.rerun()
-    
-    with col4:
-        if st.button("↩️ Reset"):
-            st.session_state.board = copy.deepcopy(st.session_state.initial_board)
-            st.session_state.mistakes = 0
-            st.success("Board reset!")
-            st.rerun()
 
-# Footer
+# Auto-generate puzzle if none exists
+if st.session_state.board is None:
+    with st.spinner("Loading your puzzle..."):
+        puzzle, solution = generate_simple_puzzle(st.session_state.difficulty)
+        st.session_state.board = copy.deepcopy(puzzle)
+        st.session_state.solution = solution
+        st.session_state.initial_board = copy.deepcopy(puzzle)
+        st.session_state.start_time = time.time()
+    st.rerun()
+
+# Footer with instructions
 st.markdown("---")
+with st.expander("📋 How to Play"):
+    st.markdown("""
+    **🎯 Goal:** Fill the 9×9 grid with numbers 1-9
+    
+    **📐 Rules:**
+    - Each row must have all numbers 1-9
+    - Each column must have all numbers 1-9  
+    - Each 3×3 box must have all numbers 1-9
+    - No repeating numbers in any row, column, or box
+    
+    **🎮 How to play:**
+    1. Select a cell using the Row/Column dropdowns
+    2. Enter a number (1-9) 
+    3. Click "Place Number" to confirm
+    4. Use hints if you get stuck
+    5. Check your progress anytime
+    
+    **🏆 Difficulty:**
+    - **Easy:** More given numbers (easier start)
+    - **Medium:** Moderate challenge
+    - **Hard:** Fewer given numbers (harder puzzle)
+    """)
+
 st.markdown("""
-<div style="text-align: center; color: #666;">
-    <small>🧩 **Sudoku Game** - Challenge your mind with logic puzzles!</small>
+<div style="text-align: center; color: #666; margin-top: 20px;">
+    <small>🧩 <strong>Quick Tip:</strong> Look for cells where only one number can fit!</small>
 </div>
 """, unsafe_allow_html=True)
