@@ -265,11 +265,11 @@ if uploaded_file is not None:
                     
                     with col1:
                         st.markdown("**📷 Original Image**")
-                        st.image(original_image, use_column_width=True)
+                        st.image(original_image, use_container_width=True)
                     
                     with col2:
                         st.markdown(f"**{style_option} Result**")
-                        st.image(converted_image, use_column_width=True)
+                        st.image(converted_image, use_container_width=True)
                     
                     st.divider()
                     
