@@ -1,70 +1,78 @@
 import streamlit as st
 import random
-import string
-import time
-from typing import List, Tuple
+from typing import List
 
 # ----------------------------
-# Word List (expandable)
+# Game Configuration
 # ----------------------------
-WORDS = ["apple", "grape", "mango", "peach", "berry", "melon", "lemon", "chili", "guava"]
+WORDS = ["APPLE", "MANGO", "GRAPE", "BERRY", "PEACH", "LEMON", "PLUM", "PEAR"]
 
 # ----------------------------
 # Helper Functions
 # ----------------------------
-def new_secret_word() -> str:
-    return random.choice(WORDS).upper()
-
 def check_guess(secret: str, guess: str) -> List[str]:
-    feedback = []
-    for i, ch in enumerate(guess):
-        if ch == secret[i]:
-            feedback.append("🟩")
-        elif ch in secret:
-            feedback.append("🟨")
-        else:
-            feedback.append("⬜")
+    """Compare guess with secret word and return feedback list."""
+    feedback = ["⬜"] * len(secret)  # Default to gray
+    secret_letters = list(secret)
+
+    # Mark greens (correct position)
+    for i in range(len(secret)):
+        if guess[i] == secret[i]:
+            feedback[i] = "🟩"
+            secret_letters[i] = None  # mark as used
+
+    # Mark yellows (wrong position but correct letter)
+    for i in range(len(secret)):
+        if feedback[i] == "⬜" and guess[i] in secret_letters:
+            feedback[i] = "🟨"
+            secret_letters[secret_letters.index(guess[i])] = None
+
     return feedback
 
 # ----------------------------
-# Streamlit UI
+# Initialize Session State
 # ----------------------------
-st.set_page_config(page_title="Mini Word Game", page_icon="🎮", layout="centered")
-st.title("🎮 Mobile Word Game")
-
 if "secret" not in st.session_state:
-    st.session_state.secret = new_secret_word()
+    st.session_state.secret = random.choice(WORDS)
+if "history" not in st.session_state:
     st.session_state.history = []
+if "game_over" not in st.session_state:
     st.session_state.game_over = False
 
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("🔄 New Game"):
-        st.session_state.secret = new_secret_word()
-        st.session_state.history = []
-        st.session_state.game_over = False
-        st.success("New game started!")
+# ----------------------------
+# UI
+# ----------------------------
+st.title("🎮 Word Guess Game")
+st.write("Guess the hidden fruit name. Feedback: 🟩 correct, 🟨 wrong place, ⬜ not present.")
 
-with col2:
-    if st.button("❌ Reveal"):
-        st.info(f"The secret word was: **{st.session_state.secret}**")
-        st.session_state.game_over = True
+# Show available words
+st.subheader("Available Words")
+st.write(", ".join(WORDS))
 
-# Guess Input
-guess = st.text_input("Enter your guess (5 letters):", max_chars=5).upper()
+# Guess input via dropdown
+guess = st.selectbox("Pick your guess:", [""] + WORDS)
 
+# Submit guess
 if st.button("Submit Guess") and not st.session_state.game_over:
-    if len(guess) != 5:
-        st.warning("Please enter a 5-letter word!")
+    if guess == "":
+        st.warning("Please select a word!")
     else:
         result = check_guess(st.session_state.secret, guess)
         st.session_state.history.append((guess, "".join(result)))
+
         if guess == st.session_state.secret:
             st.success("🎉 Correct! You guessed it!")
             st.session_state.game_over = True
 
-# Display history
-st.subheader("Your Guesses")
-for g, fb in st.session_state.history:
-    st.write(f"{g} → {fb}")
+# Show history
+if st.session_state.history:
+    st.subheader("Your Guesses")
+    for g, r in st.session_state.history:
+        st.write(f"{g} → {r}")
 
+# Restart button
+if st.button("🔄 Restart Game"):
+    st.session_state.secret = random.choice(WORDS)
+    st.session_state.history = []
+    st.session_state.game_over = False
+    st.info("New game started! Pick a word from the list above.")
