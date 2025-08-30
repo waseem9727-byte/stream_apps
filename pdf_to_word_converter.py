@@ -25,19 +25,36 @@ try:
 except ImportError:
     DOCX_LIBRARY_AVAILABLE = False
 
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
 # --- Page Config ---
 st.set_page_config(
-    page_title="📄➡️📝 PDF to Word Converter",
-    page_icon="📄",
+    page_title="📄↔️📝 PDF ↔️ Word Converter",
+    page_icon="🔄",
     layout="wide"
 )
 
-st.title("📄➡️📝 PDF to Word Converter")
-st.markdown("Convert your PDF files to editable Word documents with ease!")
+st.title("📄↔️📝 PDF ↔️ Word Converter")
+st.markdown("Convert between PDF and Word documents with ease!")
 
 # Check for required libraries
-if not PDF_LIBRARY_AVAILABLE or not DOCX_LIBRARY_AVAILABLE:
-    st.error("""
+missing_libraries = []
+if not PDF_LIBRARY_AVAILABLE:
+    missing_libraries.extend(["PyPDF2", "pdfplumber"])
+if not DOCX_LIBRARY_AVAILABLE:
+    missing_libraries.append("python-docx")
+if not REPORTLAB_AVAILABLE:
+    missing_libraries.append("reportlab")
+
+if missing_libraries:
+    st.error(f"""
     **Missing Required Libraries!**
     
     Please add the following to your `requirements.txt` file:
@@ -47,18 +64,22 @@ if not PDF_LIBRARY_AVAILABLE or not DOCX_LIBRARY_AVAILABLE:
     PyPDF2
     pdfplumber
     python-docx
+    reportlab
     ```
     
-    **Alternative requirements.txt:**
-    ```
-    streamlit
-    pdfplumber==0.9.0
-    python-docx==0.8.11
-    ```
+    **Missing libraries:** {', '.join(missing_libraries)}
     """)
     st.stop()
 
-# --- Helper Functions ---
+# --- Conversion Mode Selection ---
+st.subheader("🔄 Select Conversion Mode")
+conversion_mode = st.selectbox(
+    "Choose conversion type:",
+    ["📄➡️📝 PDF to Word", "📝➡️📄 Word to PDF"],
+    help="Select whether you want to convert PDF to Word or Word to PDF"
+)
+
+# --- Helper Functions for PDF to Word ---
 def extract_text_pypdf2(pdf_file):
     """Extract text from PDF using PyPDF2"""
     try:
@@ -167,186 +188,429 @@ def create_word_document(text_content, original_filename, formatting_options):
         st.error(f"Error creating Word document: {str(e)}")
         return None
 
-# --- Main App Interface ---
-col1, col2 = st.columns([2, 1])
+# --- Helper Functions for Word to PDF ---
+def extract_text_from_docx(docx_file):
+    """Extract text from Word document"""
+    try:
+        doc = Document(docx_file)
+        text_content = []
+        
+        for para in doc.paragraphs:
+            if para.text.strip():
+                # Determine if it's a heading
+                is_heading = para.style.name.startswith('Heading')
+                heading_level = 0
+                if is_heading:
+                    try:
+                        heading_level = int(para.style.name.split()[-1])
+                    except:
+                        heading_level = 1
+                
+                text_content.append({
+                    'text': para.text.strip(),
+                    'is_heading': is_heading,
+                    'heading_level': heading_level,
+                    'style': para.style.name
+                })
+        
+        return text_content
+    except Exception as e:
+        st.error(f"Error reading Word document: {str(e)}")
+        return None
 
-with col2:
-    st.info(f"📚 Using **{PDF_LIBRARY}** for PDF processing")
-
-# File upload
-uploaded_file = st.file_uploader(
-    "Choose a PDF file",
-    type=["pdf"],
-    help="Upload a PDF file to convert to Word format"
-)
-
-if uploaded_file is not None:
-    # Display file info
-    file_details = {
-        "Filename": uploaded_file.name,
-        "File size": f"{uploaded_file.size / 1024:.1f} KB",
-        "File type": uploaded_file.type
-    }
-    
-    with st.expander("📋 File Information", expanded=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Filename", uploaded_file.name)
-        with col2:
-            st.metric("Size", f"{uploaded_file.size / 1024:.1f} KB")
-        with col3:
-            st.metric("Type", "PDF")
-    
-    # Formatting options
-    st.subheader("🎨 Formatting Options")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        include_page_numbers = st.checkbox("Include page numbers", value=True)
-    
-    with col2:
-        page_breaks = st.checkbox("Page breaks between PDF pages", value=True)
-    
-    with col3:
-        font_size = st.selectbox("Font size", [9, 10, 11, 12, 14, 16], index=2)
-    
-    with col4:
-        extraction_method = st.selectbox(
-            "Extraction method",
-            ["Auto", "PyPDF2", "pdfplumber"] if PDF_LIBRARY_AVAILABLE else ["Auto"],
-            help="Choose PDF text extraction method"
+def create_pdf_from_text(text_content, original_filename, pdf_options):
+    """Create PDF from text content using ReportLab"""
+    try:
+        buffer = io.BytesIO()
+        
+        # Set page size
+        page_size = A4 if pdf_options['page_size'] == 'A4' else letter
+        
+        # Create PDF document
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=page_size,
+            rightMargin=pdf_options['margin'],
+            leftMargin=pdf_options['margin'],
+            topMargin=pdf_options['margin'],
+            bottomMargin=pdf_options['margin']
         )
-    
-    formatting_options = {
-        'include_page_numbers': include_page_numbers,
-        'page_breaks': page_breaks,
-        'font_size': font_size
-    }
-    
-    # Convert button
-    if st.button("🔄 Convert PDF to Word", type="primary", use_container_width=True):
-        with st.spinner("Converting PDF to Word... This may take a moment."):
-            # Reset file pointer
-            uploaded_file.seek(0)
+        
+        # Get styles
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Add title
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Title'],
+            fontSize=16,
+            spaceAfter=30,
+            alignment=1  # Center alignment
+        )
+        story.append(Paragraph(f"Converted from: {original_filename}", title_style))
+        
+        # Add conversion info
+        info_style = ParagraphStyle(
+            'CustomInfo',
+            parent=styles['Normal'],
+            fontSize=10,
+            spaceAfter=20,
+            alignment=1,  # Center alignment
+            textColor='grey'
+        )
+        story.append(Paragraph(f"Converted on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", info_style))
+        story.append(Spacer(1, 20))
+        
+        # Process content
+        for item in text_content:
+            text = item['text']
             
-            # Extract text based on method selection
-            text_content = None
-            total_pages = 0
-            
-            if extraction_method == "PyPDF2" or (extraction_method == "Auto" and PDF_LIBRARY == "PyPDF2"):
-                text_content, total_pages = extract_text_pypdf2(uploaded_file)
-            elif extraction_method == "pdfplumber" or (extraction_method == "Auto" and PDF_LIBRARY == "pdfplumber"):
-                uploaded_file.seek(0)  # Reset file pointer
-                text_content, total_pages = extract_text_pdfplumber(uploaded_file)
-            
-            if text_content and len(text_content) > 0:
-                # Show extraction results
-                st.success(f"✅ Successfully extracted text from {len(text_content)} pages out of {total_pages} total pages")
+            if item['is_heading']:
+                # Use heading style
+                heading_level = item['heading_level']
+                if heading_level == 1:
+                    style = styles['Heading1']
+                elif heading_level == 2:
+                    style = styles['Heading2']
+                else:
+                    style = styles['Heading3']
                 
-                # Preview extracted text
-                with st.expander("👁️ Preview Extracted Text", expanded=False):
-                    preview_text = ""
-                    char_count = 0
-                    
-                    for page_data in text_content[:3]:  # Show first 3 pages
-                        page_preview = page_data['text'][:500]  # First 500 chars
-                        preview_text += f"**Page {page_data['page_number']}:**\n{page_preview}...\n\n"
-                        char_count += len(page_data['text'])
-                    
-                    st.text_area("Text Preview", preview_text, height=200, disabled=True)
-                    st.info(f"Total characters extracted: {char_count:,}")
-                
-                # Create Word document
-                original_filename = uploaded_file.name.replace('.pdf', '')
-                word_doc = create_word_document(text_content, original_filename, formatting_options)
-                
-                if word_doc:
-                    # Generate filename
-                    output_filename = f"{original_filename}_converted.docx"
-                    
-                    # Download button
-                    st.download_button(
-                        label="📥 Download Word Document",
-                        data=word_doc,
-                        file_name=output_filename,
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        type="primary",
-                        use_container_width=True
-                    )
-                    
-                    st.success("🎉 Conversion completed successfully!")
-                    
-                    # Show conversion summary
-                    with st.expander("📊 Conversion Summary", expanded=True):
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("Pages Processed", len(text_content))
-                        
-                        with col2:
-                            total_chars = sum(len(page['text']) for page in text_content)
-                            st.metric("Characters Extracted", f"{total_chars:,}")
-                        
-                        with col3:
-                            st.metric("Output Format", "DOCX")
-            
-            elif total_pages > 0:
-                st.warning(f"⚠️ Could not extract readable text from the PDF. The document may contain:")
-                st.write("• Scanned images (requires OCR)")
-                st.write("• Protected/encrypted content")
-                st.write("• Complex formatting that's difficult to parse")
-                st.write("• Non-text elements only")
-                
-                st.info("💡 **Tip:** Try using OCR software for scanned PDFs, or ensure the PDF contains selectable text.")
-            
+                # Customize heading style
+                heading_style = ParagraphStyle(
+                    f'CustomHeading{heading_level}',
+                    parent=style,
+                    fontSize=pdf_options['font_size'] + (4 - heading_level) * 2,
+                    spaceAfter=12
+                )
+                story.append(Paragraph(text, heading_style))
             else:
-                st.error("❌ Failed to process the PDF file. Please check if the file is valid and not corrupted.")
+                # Use normal paragraph style
+                para_style = ParagraphStyle(
+                    'CustomParagraph',
+                    parent=styles['Normal'],
+                    fontSize=pdf_options['font_size'],
+                    spaceAfter=pdf_options['line_spacing'],
+                    alignment=0  # Left alignment
+                )
+                story.append(Paragraph(text, para_style))
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"Error creating PDF: {str(e)}")
+        return None
 
-else:
-    # Instructions when no file is uploaded
-    st.info("👆 **Upload a PDF file to get started!**")
+# --- Main App Interface Based on Selected Mode ---
+st.divider()
+
+if conversion_mode == "📄➡️📝 PDF to Word":
+    # PDF to Word Conversion Interface
+    st.header("📄➡️📝 PDF to Word Conversion")
     
-    st.subheader("📋 How it works:")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **✅ What this app does:**
-        • Extracts text from PDF files
-        • Converts to editable Word documents
-        • Preserves basic formatting
-        • Adds page numbers and breaks
-        • Customizable font settings
-        """)
+    col1, col2 = st.columns([2, 1])
     
     with col2:
-        st.markdown("""
-        **⚠️ Limitations:**
-        • Works best with text-based PDFs
-        • Images are not converted
-        • Complex layouts may be simplified
-        • Scanned PDFs need OCR (not included)
-        • Tables may lose formatting
-        """)
+        st.info(f"📚 Using **{PDF_LIBRARY}** for PDF processing")
+    
+    # File upload
+    uploaded_file = st.file_uploader(
+        "Choose a PDF file",
+        type=["pdf"],
+        help="Upload a PDF file to convert to Word format",
+        key="pdf_upload"
+    )
+    
+    if uploaded_file is not None:
+        # Display file info
+        with st.expander("📋 File Information", expanded=True):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Filename", uploaded_file.name)
+            with col2:
+                st.metric("Size", f"{uploaded_file.size / 1024:.1f} KB")
+            with col3:
+                st.metric("Type", "PDF")
+        
+        # Formatting options
+        st.subheader("🎨 Word Document Formatting Options")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            include_page_numbers = st.checkbox("Include page numbers", value=True, key="pdf_page_nums")
+        
+        with col2:
+            page_breaks = st.checkbox("Page breaks between PDF pages", value=True, key="pdf_breaks")
+        
+        with col3:
+            font_size = st.selectbox("Font size", [9, 10, 11, 12, 14, 16], index=2, key="pdf_font")
+        
+        with col4:
+            extraction_method = st.selectbox(
+                "Extraction method",
+                ["Auto", "PyPDF2", "pdfplumber"],
+                help="Choose PDF text extraction method",
+                key="pdf_method"
+            )
+        
+        formatting_options = {
+            'include_page_numbers': include_page_numbers,
+            'page_breaks': page_breaks,
+            'font_size': font_size
+        }
+        
+        # Convert button
+        if st.button("🔄 Convert PDF to Word", type="primary", use_container_width=True, key="pdf_convert"):
+            with st.spinner("Converting PDF to Word... This may take a moment."):
+                # Reset file pointer
+                uploaded_file.seek(0)
+                
+                # Extract text based on method selection
+                text_content = None
+                total_pages = 0
+                
+                if extraction_method == "PyPDF2" or (extraction_method == "Auto" and PDF_LIBRARY == "PyPDF2"):
+                    text_content, total_pages = extract_text_pypdf2(uploaded_file)
+                elif extraction_method == "pdfplumber" or (extraction_method == "Auto" and PDF_LIBRARY == "pdfplumber"):
+                    uploaded_file.seek(0)
+                    text_content, total_pages = extract_text_pdfplumber(uploaded_file)
+                
+                if text_content and len(text_content) > 0:
+                    st.success(f"✅ Successfully extracted text from {len(text_content)} pages out of {total_pages} total pages")
+                    
+                    # Preview extracted text
+                    with st.expander("👁️ Preview Extracted Text", expanded=False):
+                        preview_text = ""
+                        char_count = 0
+                        
+                        for page_data in text_content[:3]:
+                            page_preview = page_data['text'][:500]
+                            preview_text += f"**Page {page_data['page_number']}:**\n{page_preview}...\n\n"
+                            char_count += len(page_data['text'])
+                        
+                        st.text_area("Text Preview", preview_text, height=200, disabled=True, key="pdf_preview")
+                        st.info(f"Total characters extracted: {char_count:,}")
+                    
+                    # Create Word document
+                    original_filename = uploaded_file.name.replace('.pdf', '')
+                    word_doc = create_word_document(text_content, original_filename, formatting_options)
+                    
+                    if word_doc:
+                        output_filename = f"{original_filename}_converted.docx"
+                        
+                        st.download_button(
+                            label="📥 Download Word Document",
+                            data=word_doc,
+                            file_name=output_filename,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            type="primary",
+                            use_container_width=True,
+                            key="pdf_download"
+                        )
+                        
+                        st.success("🎉 PDF to Word conversion completed successfully!")
+                else:
+                    st.warning("⚠️ Could not extract readable text from the PDF.")
+
+else:  # Word to PDF Conversion
+    st.header("📝➡️📄 Word to PDF Conversion")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col2:
+        st.info("🔧 Using **ReportLab** for PDF generation")
+    
+    # File upload
+    uploaded_file = st.file_uploader(
+        "Choose a Word document",
+        type=["docx"],
+        help="Upload a Word document (.docx) to convert to PDF format",
+        key="word_upload"
+    )
+    
+    if uploaded_file is not None:
+        # Display file info
+        with st.expander("📋 File Information", expanded=True):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Filename", uploaded_file.name)
+            with col2:
+                st.metric("Size", f"{uploaded_file.size / 1024:.1f} KB")
+            with col3:
+                st.metric("Type", "DOCX")
+        
+        # PDF formatting options
+        st.subheader("🎨 PDF Formatting Options")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            page_size = st.selectbox("Page size", ["A4", "Letter"], index=0, key="word_page_size")
+        
+        with col2:
+            font_size = st.selectbox("Font size", [9, 10, 11, 12, 14, 16], index=2, key="word_font")
+        
+        with col3:
+            line_spacing = st.selectbox("Line spacing", [6, 8, 10, 12, 15], index=2, key="word_spacing")
+        
+        with col4:
+            margin = st.selectbox("Margins (inches)", [0.5, 0.75, 1.0, 1.25], index=2, key="word_margin")
+        
+        pdf_options = {
+            'page_size': page_size,
+            'font_size': font_size,
+            'line_spacing': line_spacing,
+            'margin': margin * inch
+        }
+        
+        # Convert button
+        if st.button("🔄 Convert Word to PDF", type="primary", use_container_width=True, key="word_convert"):
+            with st.spinner("Converting Word to PDF... This may take a moment."):
+                # Reset file pointer
+                uploaded_file.seek(0)
+                
+                # Extract text from Word document
+                text_content = extract_text_from_docx(uploaded_file)
+                
+                if text_content and len(text_content) > 0:
+                    st.success(f"✅ Successfully extracted content from Word document ({len(text_content)} paragraphs)")
+                    
+                    # Preview extracted text
+                    with st.expander("👁️ Preview Extracted Text", expanded=False):
+                        preview_content = []
+                        char_count = 0
+                        
+                        for item in text_content[:10]:  # Show first 10 items
+                            text_type = "HEADING" if item['is_heading'] else "PARAGRAPH"
+                            preview_content.append(f"[{text_type}] {item['text'][:200]}...")
+                            char_count += len(item['text'])
+                        
+                        preview_text = "\n\n".join(preview_content)
+                        st.text_area("Content Preview", preview_text, height=300, disabled=True, key="word_preview")
+                        st.info(f"Total characters extracted: {char_count:,}")
+                    
+                    # Create PDF
+                    original_filename = uploaded_file.name.replace('.docx', '')
+                    pdf_doc = create_pdf_from_text(text_content, original_filename, pdf_options)
+                    
+                    if pdf_doc:
+                        output_filename = f"{original_filename}_converted.pdf"
+                        
+                        st.download_button(
+                            label="📥 Download PDF Document",
+                            data=pdf_doc,
+                            file_name=output_filename,
+                            mime="application/pdf",
+                            type="primary",
+                            use_container_width=True,
+                            key="word_download"
+                        )
+                        
+                        st.success("🎉 Word to PDF conversion completed successfully!")
+                        
+                        # Show conversion summary
+                        with st.expander("📊 Conversion Summary", expanded=True):
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                st.metric("Paragraphs", len(text_content))
+                            
+                            with col2:
+                                headings = len([item for item in text_content if item['is_heading']])
+                                st.metric("Headings", headings)
+                            
+                            with col3:
+                                total_chars = sum(len(item['text']) for item in text_content)
+                                st.metric("Characters", f"{total_chars:,}")
+                            
+                            with col4:
+                                st.metric("Output Format", "PDF")
+                else:
+                    st.warning("⚠️ Could not extract readable content from the Word document.")
+
+# Instructions section
+if not uploaded_file:
+    st.info("👆 **Upload a file to get started!**")
+    
+    # Mode-specific instructions
+    if conversion_mode == "📄➡️📝 PDF to Word":
+        st.subheader("📋 PDF to Word Conversion - How it works:")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **✅ What this conversion does:**
+            • Extracts text from PDF files
+            • Converts to editable Word documents
+            • Preserves basic formatting
+            • Adds page numbers and breaks
+            • Customizable font settings
+            """)
+        
+        with col2:
+            st.markdown("""
+            **⚠️ Limitations:**
+            • Works best with text-based PDFs
+            • Images are not converted
+            • Complex layouts may be simplified
+            • Scanned PDFs need OCR (not included)
+            • Tables may lose formatting
+            """)
+    
+    else:  # Word to PDF
+        st.subheader("📋 Word to PDF Conversion - How it works:")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **✅ What this conversion does:**
+            • Extracts text and headings from Word docs
+            • Creates professionally formatted PDFs
+            • Preserves heading hierarchy
+            • Customizable page layout
+            • Maintains paragraph structure
+            """)
+        
+        with col2:
+            st.markdown("""
+            **⚠️ Limitations:**
+            • Only supports .docx files
+            • Images are not converted
+            • Complex formatting may be simplified
+            • Tables are not supported
+            • Advanced Word features may be lost
+            """)
     
     st.subheader("💡 Tips for best results:")
-    st.markdown("""
-    1. **Text-based PDFs work best** - Documents created from Word, Google Docs, etc.
-    2. **Avoid scanned documents** - These need OCR processing
-    3. **Simple layouts convert better** - Complex multi-column layouts may be reformatted
-    4. **Check the preview** - Review extracted text before downloading
-    5. **Try different extraction methods** - If one doesn't work well, try the other
-    """)
+    if conversion_mode == "📄➡️📝 PDF to Word":
+        st.markdown("""
+        1. **Text-based PDFs work best** - Documents created from Word, Google Docs, etc.
+        2. **Avoid scanned documents** - These need OCR processing
+        3. **Simple layouts convert better** - Complex multi-column layouts may be reformatted
+        4. **Check the preview** - Review extracted text before downloading
+        5. **Try different extraction methods** - If one doesn't work well, try the other
+        """)
+    else:
+        st.markdown("""
+        1. **Use .docx format** - Older .doc files are not supported
+        2. **Simple formatting works best** - Complex layouts may be simplified
+        3. **Use built-in heading styles** - These will be preserved in PDF
+        4. **Check the preview** - Review extracted content before downloading
+        5. **Adjust formatting options** - Customize the PDF appearance to your needs
+        """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666;">
     <small>
-    🔧 **Technical Note:** This app extracts selectable text from PDFs. For scanned documents or images, 
-    you'll need OCR (Optical Character Recognition) software.
+    🔧 **Technical Note:** This app works with text-based documents. 
+    For scanned documents, OCR software is required. Images and complex layouts may not be perfectly preserved.
     </small>
 </div>
 """, unsafe_allow_html=True)
