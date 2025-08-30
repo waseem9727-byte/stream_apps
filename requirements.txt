@@ -6,3 +6,6 @@ PyPDF2
 pdfplumber
 python-docx
 reportlab
+Pillow
+opencv-python-headless
+numpy
