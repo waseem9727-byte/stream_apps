@@ -1,36 +1,42 @@
 import streamlit as st
-from moviepy.editor import VideoFileClip
+import ffmpeg
 import os
 
-st.title("🎥 Video to Audio Extractor")
+st.title("🎵 Video to Audio Extractor")
 
 # Upload video
-uploaded_video = st.file_uploader("Upload a video file", type=["mp4", "mov", "avi", "mkv"])
+uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov", "mkv"])
 
-if uploaded_video is not None:
+if uploaded_file is not None:
     # Save uploaded video temporarily
-    with open("temp_video.mp4", "wb") as f:
-        f.write(uploaded_video.read())
+    input_path = "input_video.mp4"
+    with open(input_path, "wb") as f:
+        f.write(uploaded_file.read())
 
-    st.video("temp_video.mp4")
+    # Output audio file
+    output_path = "output_audio.mp3"
 
-    if st.button("Extract Audio 🎵"):
-        # Extract audio using moviepy
-        clip = VideoFileClip("temp_video.mp4")
-        audio_file = "extracted_audio.mp3"
-        clip.audio.write_audiofile(audio_file)
+    try:
+        # Extract audio using ffmpeg
+        (
+            ffmpeg
+            .input(input_path)
+            .output(output_path, format="mp3", acodec="libmp3lame")
+            .run(overwrite_output=True, quiet=True)
+        )
 
         st.success("✅ Audio extracted successfully!")
 
-        # Provide download button
-        with open(audio_file, "rb") as audio:
-            st.download_button(
-                label="Download Audio File",
-                data=audio,
-                file_name="audio.mp3",
-                mime="audio/mpeg"
-            )
+        # Play audio in the app
+        st.audio(output_path)
 
-        # Clean up
-        clip.close()
-        os.remove("temp_video.mp4")
+        # Download button
+        with open(output_path, "rb") as f:
+            st.download_button("⬇️ Download Audio", f, file_name="extracted_audio.mp3")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+    # Clean up
+    if os.path.exists(input_path):
+        os.remove(input_path)
